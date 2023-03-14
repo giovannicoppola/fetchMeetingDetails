@@ -1,4 +1,4 @@
-#!/usr/bin/python3 
+ #!/usr/bin/python3 
 # 
 # Partly cloudy ⛅️  🌡️+44°F (feels +39°F, 51%) 🌬️↓12mph 🌕 Thu Mar  9 15:22:34 2023
 # W10Q1 – 68 ➡️ 296 – 302 ❇️ 62
@@ -9,15 +9,15 @@ A script to use applescript to grab meeting details without focusing on the app 
 
 """
 
-import os
 import time
-import sys
 import json
-import requests
+import os
 from config import log
 from subprocess import Popen, PIPE, run
 
 myTimeStart = round(time.time())
+TIMEINTERVAL = os.path.expanduser(os.getenv('TIME_INTERVAL'))
+
 
 
 scpt = '''
@@ -27,7 +27,7 @@ scpt = '''
 with timeout of (2800 * minutes) seconds
 	
 	set now to current date
-	set now5 to now + (minInterval * minutes) #will work for the current event until 5 min from the end, after which will work for the next event
+	set now5 to now + (minInterval * minutes) #will work for the current event until x min from the end, after which will work for the next event
 	
 	tell application "Microsoft Outlook"
 		set the clipboard to ""
@@ -38,11 +38,11 @@ with timeout of (2800 * minutes) seconds
 		set CalEvProperties to ""
         set totalList to (get every calendar event whose start time is less than or equal to now5 and end time is greater than now5)
         set totalNumber to the number of items in totalList
-        repeat with myCaz in totalList
-            set theTitles to theTitles & "--" & (subject of myCaz as text) 
-        end repeat
-		repeat with CalEv in (get every calendar event whose start time is less than or equal to now5 and end time is greater than now5)
+        
+		set finalList to ""
+        repeat with CalEv in (get every calendar event whose start time is less than or equal to now5 and end time is greater than now5)
 			set the clipboard to ""
+            
 			tell CalEv
                 
 				# repeat until (the clipboard) contains ("Event" & id as text) & " info"
@@ -75,12 +75,14 @@ with timeout of (2800 * minutes) seconds
 		
                 
 				#return {CalEvProperties, mySubject}
-                return startFormat & " – " & startTimeFormat & "-" & endTimeFormat & "|||---|||" & mySubject & "|||---|||" & nameList & "|||---|||" & theTitles & "|||---|||" & totalNumber & "|||---|||"
+                set currEvent to (startFormat & " – " & startTimeFormat & "-" & endTimeFormat & "|||---|||" & mySubject & "|||---|||" & nameList & "|||---|||")
+                set finalList to (currEvent & "[][][]" & finalList)
 
 			end tell
 			#delay 0.5
 		end repeat
- 
+    
+    return finalList
 
 
 	end tell
@@ -89,25 +91,53 @@ end timeout
 end run
 '''
 
-#args = [SPRINT_DUR, Email_Start, Email_StartF, sprintDurSec]
-args = ["5"]        
+
+args = [TIMEINTERVAL]        
 p = Popen(['osascript', '-'] + args, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
 stdout, stderr = p.communicate(scpt)
-print (stdout)
+log (stdout)
 
-myResults = stdout.split("|||---|||")
-myStartTime = myResults[0]
-myTitle = myResults[1]
-myAttendees = myResults[2]
+myResults = stdout.split("[][][]")
+myFinalString = ''
+countR = 0
+result = {"items": []}
+lenResults = len(myResults)-1
+if lenResults > 0:
 
-myFinalString = f"# {myTitle}\n{myStartTime}\n\t{myAttendees}\n\n"
+    for currResult in myResults[:-1]:
+        
+        countR += 1 
+        currResultL = currResult.split("|||---|||")
+        myStartTime = currResultL[0]
+        myTitle = currResultL[1]
+        myAttendees = currResultL[2]
+        myFinalString = f"{myTitle}\n{myStartTime}\n\t{myAttendees}\n\n"
 
-print (myFinalString)
+        result["items"].append({
+            "title": f"{myTitle}",
+            "subtitle": f"{countR}/{lenResults} – {myStartTime}",
+            "arg": f"# {myFinalString}"
+                })
+        log (myFinalString)
+else:
+   result["items"].append({
+            "title": f"No events in this time interval",
+            "subtitle": f"enjoy the break!",
+            "arg": "",
+            "icon": {   
+        
+                 "path": "coffee.png"
+             }
+
+                })
+
+
+    
 
 myTimeEnd = round(time.time())
 
 main_timeElapsed = round (myTimeEnd - myTimeStart)
-print (f"time elapsed: {main_timeElapsed}")
+log (f"time elapsed: {main_timeElapsed}")
 
 
 myTimeStartF = time.strftime('%Y-%m-%d-%a, %I:%M', time.localtime(myTimeStart))
@@ -115,8 +145,10 @@ myTimeEndF = time.strftime('%I:%M %p', time.localtime(myTimeEnd))
 
 
 # Copy the string to the clipboard
-run('pbcopy', universal_newlines=True, input=myFinalString)
+#run('pbcopy', universal_newlines=True, input=myFinalString)
 
+
+print (json.dumps(result))
 
 
 
